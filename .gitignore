@@ -1,0 +1,31 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de Banco de Dados Local
+banco_saves.db
+banco_saves.db-journal
+
+# Isso impede de você enviar 100GB de zip pra nuvem
+dados_cofre/
+
+# Arquivos de teste e temporários
+capa.jpg
+capa.png
+teste_old/
+*.zip
+
+# Virtual Environments (Se você criar um)
+venv/
+.venv/
+env/
+
+# Arquivos do Sistema Operacional
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Pastas de IDEs (VSCode, Pycharm)
+.vscode/
+.idea/
