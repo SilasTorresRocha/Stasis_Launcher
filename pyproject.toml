@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stasis-launcher"
+version = "1.3.0"
+authors = [
+  { name = "Silas Torres Rocha" },
+]
+description = "Gerenciador e Launcher de Jogos Indie com Controle de Saves e Versoes em Stasis"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Games/Entertainment",
+]
+dependencies = [
+    "nicegui>=2.0.0",
+    "pywebview>=5.0.0",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+stasis-launcher = "main:iniciar"
+
+[tool.setuptools]
+py-modules = ["main", "banco_dados", "interface_modais", "utilidades", "splash"]

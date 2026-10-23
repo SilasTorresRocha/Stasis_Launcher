@@ -7,14 +7,15 @@ __pycache__/
 banco_saves.db
 banco_saves.db-journal
 
-# Isso impede de você enviar 100GB de zip pra nuvem
-dados_cofre/
+# Isso impede de enviar 100GB de zip pra nuvem
+dados_stasis/
 
 # Arquivos de teste e temporários
 capa.jpg
 capa.png
 teste_old/
 *.zip
+*.log
 
 # Virtual Environments (Se você criar um)
 venv/
@@ -26,6 +27,6 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Pastas de IDEs (VSCode, Pycharm)
+# Pastas de IDE
 .vscode/
 .idea/
