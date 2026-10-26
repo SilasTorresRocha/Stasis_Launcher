@@ -115,10 +115,12 @@ else:
 
 log_splash(f"Porta {porta_livre} pronta. Abrindo janela...")
 
+ordem_catalogo = {'valor': 'recente'}
+
 @ui.refreshable
 def carregar_grid_jogos():
     """Lê os jogos do banco e monta os cards principais na tela"""
-    jogos = banco_dados.listar_jogos()
+    jogos = banco_dados.listar_jogos(ordem=ordem_catalogo['valor'])
     
     if not jogos:
         with ui.column().classes('w-full items-center justify-center p-12 text-center'):
@@ -275,12 +277,31 @@ with ui.left_drawer(elevated=True).props('show-if-above width=260').style('backg
     
     ui.label('Informações').classes('text-sm font-bold mb-2 mt-2 ml-4 text-gray-500 uppercase')
     ui.label('Gerenciador e Launcher de Jogos em Stasis.').classes('text-xs text-gray-400 ml-4 mr-4')
-    ui.label('Versão 1.3.0').classes('text-xs text-gray-500 ml-4 mt-2 font-mono')
+    ui.label('Versão 1.4.0').classes('text-xs text-gray-500 ml-4 mt-2 font-mono')
 
 with ui.column().classes('w-full max-w-[1400px] mx-auto p-6'):
     with ui.row().classes('w-full justify-between items-center mb-2'):
-        ui.label('Meu Catálogo').classes('text-3xl font-bold text-white')
-        ui.label('Clique em um card para detalhes e saves.').classes('text-gray-400 text-sm')
+        with ui.column().classes('gap-0'):
+            ui.label('Meu Catálogo').classes('text-3xl font-bold text-white')
+            ui.label('Clique em um card para detalhes e saves.').classes('text-gray-400 text-sm')
+            
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('sort', color='primary').classes('text-xl')
+            def mudar_ordenacao(e):
+                ordem_catalogo['valor'] = e.value
+                carregar_grid_jogos.refresh()
+                
+            ui.select(
+                {
+                    'recente': 'Mais Recentes (Jogados)',
+                    'atualizacao': 'Últimos Adicionados',
+                    'alfabetica': 'Nome (A-Z)',
+                    'status': 'Por Status'
+                },
+                value=ordem_catalogo['valor'],
+                label='Ordenar por',
+                on_change=mudar_ordenacao
+            ).props('dense outlined options-dense').classes('w-56 text-sm bg-gray-900')
         
     carregar_grid_jogos()
 

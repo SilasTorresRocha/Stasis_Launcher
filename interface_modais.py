@@ -277,6 +277,9 @@ def abrir_detalhes(jogo, funcao_atualizar_grid):
                 if tem_backup_zip:
                     ui.button('Restaurar Save', icon='unarchive', color='amber', on_click=acao_restaurar_save).props('outline').tooltip('Extrai os saves do Stasis para a pasta do jogo')
 
+                # Ação Atualizar / Migrar Versão
+                ui.button('Atualizar Jogo', icon='upgrade', color='cyan', on_click=lambda: abrir_modal_migracao(jogo, funcao_atualizar_grid)).props('outline').tooltip('Migrar saves para uma nova versão (.exe)')
+
                 # Abrir pasta no Explorer
                 def acao_abrir_pasta():
                     alvo = jogo.get('pasta_appdata') or jogo.get('caminho_executavel')
@@ -292,3 +295,152 @@ def abrir_detalhes(jogo, funcao_atualizar_grid):
                 ui.button('Fechar', on_click=dialog_detalhes.close, color='gray')
             
     dialog_detalhes.open()
+
+def abrir_modal_migracao(jogo, funcao_atualizar_grid):
+    with ui.dialog() as dialog_migracao, ui.card().classes('w-full max-w-2xl p-6 bg-gray-900 border border-cyan-700/50'):
+        with ui.row().classes('items-center gap-3 mb-2'):
+            ui.icon('upgrade', size='2.2rem', color='cyan')
+            with ui.column().classes('gap-0'):
+                ui.label('Migrar para Nova Versão').classes('text-2xl font-bold text-white')
+                ui.label(f'Jogo: {jogo["nome"]} (Versão atual: {jogo.get("versao", "N/A")})').classes('text-sm text-cyan-400')
+                
+        ui.markdown(
+            'Esta ferramenta faz um **backup de segurança automático** dos seus saves atuais, '
+            'localiza a pasta de saves da nova versão, **transfere todos os seus arquivos de save** '
+            'e atualiza o caminho do executável para você continuar de onde parou.'
+        ).classes('text-xs text-gray-300 bg-gray-800/80 p-3 rounded-lg border border-gray-700 my-2')
+
+        with ui.column().classes('w-full gap-3 mt-2'):
+            # Novo Executável
+            with ui.row().classes('w-full items-center justify-between no-wrap'):
+                input_novo_exe = ui.input(
+                    'Novo Executável (.exe) *',
+                    value=''
+                ).classes('flex-1')
+                
+                async def buscar_novo_exe():
+                    path = await utilidades.escolher_executavel()
+                    if path:
+                        input_novo_exe.value = path
+                        # Detecção automática de saves na nova pasta
+                        pasta_detectada, tem_saves = utilidades.detectar_pasta_saves(path)
+                        if pasta_detectada:
+                            input_nova_pasta.value = pasta_detectada
+                            
+                ui.button(icon='sports_esports', on_click=buscar_novo_exe).props('outline color=cyan').classes('mt-2').tooltip('Buscar novo .exe')
+
+            # Nova Versão
+            input_nova_versao = ui.input(
+                'Nova Versão * (ex: v0.5, 1.2)',
+                value=''
+            ).classes('w-full')
+
+            # Nova Pasta de Saves
+            with ui.row().classes('w-full items-center justify-between no-wrap'):
+                input_nova_pasta = ui.input(
+                    'Pasta de Destino dos Saves',
+                    value=''
+                ).classes('flex-1').tooltip('Detectada automaticamente a partir do executável')
+                
+                async def buscar_nova_pasta():
+                    path = await utilidades.escolher_pasta_save("Selecione onde salvar os saves da nova versão")
+                    if path:
+                        input_nova_pasta.value = path
+                        
+                ui.button(icon='folder_open', on_click=buscar_nova_pasta).props('outline color=secondary').classes('mt-2').tooltip('Selecionar pasta manualmente')
+
+        async def executar_migracao():
+            novo_exe = input_novo_exe.value.strip()
+            nova_versao = input_nova_versao.value.strip()
+            nova_pasta = input_nova_pasta.value.strip()
+            
+            if not novo_exe or not os.path.exists(novo_exe):
+                ui.notify('Por favor, selecione um executável válido para a nova versão!', color='negative')
+                return
+                
+            if not nova_versao:
+                ui.notify('Por favor, informe a nova versão do jogo.', color='warning')
+                return
+
+            if novo_exe == jogo.get('caminho_executavel') and nova_versao == jogo.get('versao'):
+                ui.notify('O executável e a versão são idênticos aos atuais cadastrados!', color='warning')
+                return
+                
+            dialog_migracao.close()
+            
+            ui.notify('Iniciando migração de versão e transferência de saves...', color='info')
+            
+            sucesso, nova_pasta_salva, pasta_antiga, total_copiados, msg = utilidades.migrar_versao_jogo(
+                id_jogo=jogo['id'],
+                caminho_antigo_exe=jogo.get('caminho_executavel'),
+                pasta_antiga_save=jogo.get('pasta_appdata'),
+                novo_executavel=novo_exe,
+                nova_versao=nova_versao,
+                nova_pasta_save=nova_pasta if nova_pasta else None
+            )
+            
+            if not sucesso:
+                ui.notify(msg, color='negative')
+                return
+                
+            # Atualiza no banco de dados
+            zip_backup = os.path.join(utilidades.PASTA_BACKUPS, f"jogo_{jogo['id']}_save.zip")
+            tem_zip = os.path.exists(zip_backup)
+            
+            dados_atualizacao = {
+                'caminho_executavel': novo_exe,
+                'versao': nova_versao,
+                'pasta_appdata': nova_pasta_salva,
+            }
+            if tem_zip:
+                dados_atualizacao['caminho_save'] = zip_backup
+                
+            banco_dados.atualizar_jogo(jogo['id'], dados_atualizacao)
+            
+            # Atualiza o objeto do jogo em memória
+            jogo['caminho_executavel'] = novo_exe
+            jogo['versao'] = nova_versao
+            jogo['pasta_appdata'] = nova_pasta_salva
+            if tem_zip:
+                jogo['caminho_save'] = zip_backup
+                
+            global dialog_detalhes
+            if dialog_detalhes:
+                dialog_detalhes.close()
+                dialog_detalhes = None
+                
+            funcao_atualizar_grid.refresh()
+            abrir_detalhes(jogo, funcao_atualizar_grid)
+            
+            # Modal de Confirmação & Limpeza de Disco
+            with ui.dialog() as dialog_pos, ui.card().classes('w-full max-w-lg p-6 bg-gray-900 border border-green-600/60'):
+                with ui.row().classes('items-center gap-3 mb-2'):
+                    ui.icon('check_circle', size='2.5rem', color='positive')
+                    with ui.column().classes('gap-0'):
+                        ui.label('Migração Concluída com Sucesso!').classes('text-xl font-bold text-white')
+                        ui.label(f'{jogo["nome"]} atualizado para {nova_versao}').classes('text-sm text-green-400')
+                
+                with ui.column().classes('w-full p-3 bg-gray-800 rounded-lg text-sm text-gray-300 gap-1 my-3'):
+                    ui.label(f'• {total_copiados} arquivo(s) de save migrados com sucesso.')
+                    ui.label('• Backup de segurança salvo no Stasis.')
+                    ui.label('• Novo executável registrado e pronto para jogar!')
+                    
+                if pasta_antiga and os.path.exists(pasta_antiga):
+                    ui.separator().classes('my-2 opacity-40')
+                    ui.label('Liberar Espaço no Disco (Opcional):').classes('font-bold text-amber-300 text-sm')
+                    ui.label('Os saves já estão seguros na nova versão e no Stasis. Você pode abrir a pasta da versão antiga para excluí-la:').classes('text-xs text-gray-400')
+                    
+                    with ui.row().classes('w-full justify-between items-center mt-3'):
+                        ui.button('Abrir Pasta da Versão Antiga', icon='delete_sweep', color='amber', on_click=lambda: utilidades.abrir_pasta_no_explorador(pasta_antiga)).props('outline size=sm')
+                        ui.button('Entendido / Concluir', on_click=dialog_pos.close, color='positive')
+                else:
+                    with ui.row().classes('w-full justify-end mt-2'):
+                        ui.button('Concluir', on_click=dialog_pos.close, color='positive')
+                        
+            dialog_pos.open()
+
+        with ui.row().classes('w-full justify-end items-center gap-3 mt-6'):
+            ui.button('Cancelar', on_click=dialog_migracao.close, color='gray')
+            ui.button('Confirmar Migração', icon='check_circle', on_click=executar_migracao, color='cyan').classes('font-bold')
+            
+    dialog_migracao.open()

@@ -31,12 +31,47 @@ def inicializar_banco():
     conexao.close()
     logger.info("Banco de dados SQLite inicializado com sucesso.")
 
-def listar_jogos():
+def listar_jogos(ordem='recente'):
     conexao = sqlite3.connect(ARQUIVO_BANCO)
     conexao.row_factory = sqlite3.Row
     cursor = conexao.cursor()
-    cursor.execute("SELECT * FROM jogos ORDER BY data_atualizacao DESC")
-    jogos = [dict(linha) for linha in cursor.fetchall()]
+    
+    if ordem == 'alfabetica':
+        cursor.execute("SELECT * FROM jogos ORDER BY LOWER(nome) ASC")
+        jogos = [dict(linha) for linha in cursor.fetchall()]
+    elif ordem == 'status':
+        cursor.execute("SELECT * FROM jogos ORDER BY status ASC, LOWER(nome) ASC")
+        jogos = [dict(linha) for linha in cursor.fetchall()]
+    elif ordem == 'atualizacao':
+        cursor.execute("SELECT * FROM jogos ORDER BY data_atualizacao DESC")
+        jogos = [dict(linha) for linha in cursor.fetchall()]
+    else:  # 'recente' (Jogados mais recentemente primeiro)
+        cursor.execute("SELECT * FROM jogos")
+        jogos = [dict(linha) for linha in cursor.fetchall()]
+        
+        def chave_recente(j):
+            txt_jog = j.get('ultima_vez_jogado')
+            dt_jog = None
+            if txt_jog:
+                try:
+                    dt_jog = datetime.strptime(txt_jog, "%d/%m/%Y %H:%M")
+                except Exception:
+                    pass
+            if dt_jog:
+                return (1, dt_jog)
+                
+            # Critério secundário para jogos nunca jogados: data de atualização/cadastro
+            txt_att = j.get('data_atualizacao')
+            dt_att = datetime.min
+            if txt_att:
+                try:
+                    dt_att = datetime.strptime(txt_att, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    pass
+            return (0, dt_att)
+            
+        jogos.sort(key=chave_recente, reverse=True)
+        
     conexao.close()
     return jogos
 

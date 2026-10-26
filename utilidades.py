@@ -158,7 +158,71 @@ def detectar_pasta_saves(caminho_executavel):
                 logger.info(f"Pasta de saves encontrada, mas sem saves gerados ainda: {pasta}")
                 return pasta, False
                 
+    # Se nao existe pasta de saves criada ainda, mas existe subpasta 'game' (padrao Ren'Py)
+    pasta_game = os.path.join(pasta_raiz, "game")
+    if os.path.exists(pasta_game):
+        provavel = os.path.join(pasta_game, "saves")
+        logger.info(f"Pasta padrao RenPy sugerida para novos saves: {provavel}")
+        return provavel, False
+                
     return None, False
+
+def migrar_versao_jogo(id_jogo, caminho_antigo_exe, pasta_antiga_save, novo_executavel, nova_versao, nova_pasta_save=None):
+    """
+    Executa o fluxo completo de atualização de versão do jogo:
+    1. Backup de segurança dos saves atuais em dados_stasis/
+    2. Identificação/criação da pasta de saves da nova versão
+    3. Cópia dos arquivos de save da versão antiga para a nova versão
+    Retorna: (sucesso, nova_pasta_save, pasta_jogo_antigo, total_copiados, mensagem)
+    """
+    if not novo_executavel or not os.path.exists(novo_executavel):
+        return False, None, None, 0, "O executável da nova versão não foi encontrado no disco!"
+        
+    pasta_jogo_antigo = os.path.dirname(caminho_antigo_exe) if (caminho_antigo_exe and os.path.exists(caminho_antigo_exe)) else None
+    
+    # 1. Backup de segurança se houver pasta de saves antiga
+    caminho_backup_zip = None
+    if pasta_antiga_save and os.path.exists(pasta_antiga_save):
+        caminho_backup_zip, _ = fazer_backup_save(id_jogo, pasta_antiga_save)
+        logger.info(f"Backup de seguranca gerado antes da migracao: {caminho_backup_zip}")
+        
+    # 2. Determina a pasta de saves da nova versão
+    if not nova_pasta_save:
+        pasta_detectada, _ = detectar_pasta_saves(novo_executavel)
+        if pasta_detectada:
+            nova_pasta_save = pasta_detectada
+        else:
+            pasta_raiz_nova = os.path.dirname(novo_executavel)
+            if os.path.exists(os.path.join(pasta_raiz_nova, "game")):
+                nova_pasta_save = os.path.join(pasta_raiz_nova, "game", "saves")
+            else:
+                nova_pasta_save = os.path.join(pasta_raiz_nova, "saves")
+                
+    total_copiados = 0
+    # 3. Copia os saves da versão anterior para a nova se as pastas forem distintas
+    if pasta_antiga_save and os.path.exists(pasta_antiga_save):
+        norm_antiga = os.path.normcase(os.path.abspath(pasta_antiga_save))
+        norm_nova = os.path.normcase(os.path.abspath(nova_pasta_save))
+        
+        if norm_antiga != norm_nova:
+            try:
+                os.makedirs(nova_pasta_save, exist_ok=True)
+                for raiz, _, arquivos in os.walk(pasta_antiga_save):
+                    for arq in arquivos:
+                        caminho_orig = os.path.join(raiz, arq)
+                        caminho_rel = os.path.relpath(caminho_orig, pasta_antiga_save)
+                        caminho_dest = os.path.join(nova_pasta_save, caminho_rel)
+                        os.makedirs(os.path.dirname(caminho_dest), exist_ok=True)
+                        shutil.copy2(caminho_orig, caminho_dest)
+                        total_copiados += 1
+                logger.info(f"Migracao: {total_copiados} arquivos de save copiados de {pasta_antiga_save} para {nova_pasta_save}")
+            except Exception as e:
+                logger.error(f"Erro ao copiar arquivos de save: {e}")
+                return False, nova_pasta_save, pasta_jogo_antigo, total_copiados, f"Erro ao copiar saves: {e}"
+        else:
+            logger.info("A pasta de saves da nova versao e a mesma da versao anterior. Nenhuma copia necessaria.")
+            
+    return True, nova_pasta_save, pasta_jogo_antigo, total_copiados, "Migração de versão concluída com sucesso!"
 
 def executar_jogo(caminho_executavel):
     """Inicia o jogo sem travar o aplicativo"""

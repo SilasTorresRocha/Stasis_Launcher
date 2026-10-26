@@ -20,6 +20,8 @@ O **Stasis Launcher** coloca o seu jogo em estado de *stasis*:
 ## 🚀 Funcionalidades
 
 - **Central de Launcher:** Abra seus jogos com apenas um clique e rastreie a métrica de "Última vez jogado".
+- **Ordenação Dinâmica do Catálogo:** Filtre rapidamente seus jogos por *Mais Recentes (Jogados)*, *Últimos Adicionados*, *Ordem Alfabética (A-Z)* ou agrupados por *Status*.
+- **Migração de Versão e Transferência de Saves:** Quando um jogo receber nova versão (ex: v0.4 para v0.5), o Stasis realiza backup automático dos saves atuais, transfere os dados para a nova pasta, atualiza o executável e oferece um botão para abrir a pasta antiga no Explorer para exclusão e liberação de espaço no SSD.
 - **Auto-Minimizar:** Ao clicar em *Jogar*, o Stasis Launcher se minimiza automaticamente para que você foque no jogo.
 - **Detecção Inteligente de Saves:** Identifica automaticamente pastas com arquivos de save reais (`.save`, `.sav`, `.dat`) no diretório do jogo ou no `%APPDATA%/RenPy`.
 - **Economia Gigante de Armazenamento:** Preserva notas, status, links de acompanhamento e o save, liberando espaço no SSD.
