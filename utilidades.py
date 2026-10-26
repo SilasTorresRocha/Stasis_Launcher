@@ -307,19 +307,20 @@ def restaurar_backup_save(caminho_zip, pasta_save):
         logger.error(f"Erro ao restaurar save: {e}")
         return False, f"Erro ao restaurar save: {e}"
 
-async def exportar_backup_geral():
-    """Gera um arquivo zip unico contendo o banco de dados e todo o Stasis"""
+async def solicitar_caminho_salvar_backup_geral():
+    """Abre o diálogo do Windows para o usuário escolher onde salvar o Backup Geral"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     nome_padrao = f"Backup_Stasis_{timestamp}.zip"
-    
-    destino_zip = await run.io_bound(
+    return await run.io_bound(
         _abrir_dialogo_salvar_arquivo,
         "Escolha onde salvar o Backup Geral",
         nome_padrao
     )
-    
+
+def gravar_arquivo_backup_geral(destino_zip):
+    """Gera o arquivo zip único contendo o banco de dados e os dados do Stasis (executado em thread separada)"""
     if not destino_zip:
-        return False, "Operacao cancelada."
+        return False, "Caminho de destino inválido."
         
     try:
         with zipfile.ZipFile(destino_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -329,6 +330,9 @@ async def exportar_backup_geral():
             if os.path.exists(PASTA_DADOS):
                 for raiz, _, arquivos in os.walk(PASTA_DADOS):
                     for arq in arquivos:
+                        # Ignora arquivos de controle interno
+                        if arq.endswith(".close") or arq.endswith(".tmp"):
+                            continue
                         caminho_completo = os.path.join(raiz, arq)
                         caminho_rel = os.path.relpath(caminho_completo, start=".")
                         zipf.write(caminho_completo, arcname=caminho_rel)
@@ -339,17 +343,15 @@ async def exportar_backup_geral():
         logger.error(f"Erro no backup geral: {e}")
         return False, f"Erro ao gerar Backup Geral: {e}"
 
-async def importar_backup_geral():
-    """Restaura o banco e todo o Stasis a partir de um arquivo zip"""
-    origem_zip = await run.io_bound(
-        _abrir_dialogo_arquivo,
-        "Selecione o arquivo de Backup Geral (.zip)",
-        [("Arquivo Zip", "*.zip")]
-    )
-    
-    if not origem_zip:
-        return False, "Operacao cancelada."
-        
+async def exportar_backup_geral():
+    """Gera o backup geral solicitando o caminho e executando a compactação sem travar a interface"""
+    destino_zip = await solicitar_caminho_salvar_backup_geral()
+    if not destino_zip:
+        return False, "Operação cancelada."
+    return await run.io_bound(gravar_arquivo_backup_geral, destino_zip)
+
+def extrair_arquivo_backup_geral(origem_zip):
+    """Extrai os dados do backup geral de volta para o diretório raiz"""
     try:
         with zipfile.ZipFile(origem_zip, 'r') as zipf:
             zipf.extractall(".")
@@ -358,3 +360,16 @@ async def importar_backup_geral():
     except Exception as e:
         logger.error(f"Erro ao importar backup geral: {e}")
         return False, f"Erro ao restaurar Backup Geral: {e}"
+
+async def importar_backup_geral():
+    """Restaura o banco e todo o Stasis a partir de um arquivo zip sem travar a interface"""
+    origem_zip = await run.io_bound(
+        _abrir_dialogo_arquivo,
+        "Selecione o arquivo de Backup Geral (.zip)",
+        [("Arquivo Zip", "*.zip")]
+    )
+    
+    if not origem_zip:
+        return False, "Operação cancelada."
+        
+    return await run.io_bound(extrair_arquivo_backup_geral, origem_zip)

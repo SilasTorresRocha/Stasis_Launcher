@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import logging
+import asyncio
 
 PASTA_DADOS = "dados_stasis"
 ARQUIVO_FECHAR = os.path.join(PASTA_DADOS, "splash.close")
@@ -191,68 +192,139 @@ with ui.header(elevated=True).style('background-color: #1a1a2e').classes('items-
 with ui.left_drawer(elevated=True).props('show-if-above width=260').style('background-color: #16213e; color: white'):
     ui.label('Ferramentas').classes('text-lg font-bold mb-6 mt-4 ml-4 text-gray-300 uppercase tracking-widest')
     
+    async def exibir_modal_progresso(destino_zip, modo, jogos_alvo):
+        with ui.dialog().props('persistent') as dialog_progresso, ui.card().classes('w-full max-w-xl p-6 bg-gray-900 border border-blue-500/40 shadow-2xl'):
+            with ui.row().classes('items-center gap-3 mb-2'):
+                container_icone = ui.row().classes('items-center justify-center')
+                with container_icone:
+                    ui.spinner(size='md', color='primary')
+                    
+                with ui.column().classes('gap-0 flex-1'):
+                    titulo_progresso = ui.label('Executando Backup Geral...').classes('text-xl font-bold text-white')
+                    subtitulo_progresso = ui.label('Inicializando processo...').classes('text-xs text-blue-400')
+                    
+            barra_progresso = ui.linear_progress(value=0.0).props('rounded stripe animate size=10px color=primary').classes('w-full mt-3')
+            
+            with ui.row().classes('w-full justify-between items-center text-xs mt-1 text-gray-400 font-mono'):
+                texto_porcentagem = ui.label('0%').classes('font-bold text-cyan-400')
+                texto_contador = ui.label('Preparando ambiente...')
+
+            ui.label('Console de Execução:').classes('text-xs font-bold text-gray-500 uppercase mt-4')
+            with ui.column().classes('w-full bg-black/90 rounded-lg p-3 font-mono text-xs border border-gray-800 gap-1 min-h-[110px] justify-end'):
+                linha_0 = ui.label('').classes('text-gray-600 truncate w-full')
+                linha_1 = ui.label('').classes('text-gray-500 truncate w-full')
+                linha_2 = ui.label('').classes('text-gray-300 truncate w-full')
+                linha_3 = ui.label('> Aguardando início...').classes('text-cyan-300 font-semibold truncate w-full')
+                
+            logs_buffer = ['', '', '', '> Aguardando início...']
+            
+            def push_log(mensagem):
+                logs_buffer.pop(0)
+                logs_buffer.append(mensagem)
+                linha_0.text = logs_buffer[0]
+                linha_1.text = logs_buffer[1]
+                linha_2.text = logs_buffer[2]
+                linha_3.text = logs_buffer[3]
+
+            container_botoes = ui.row().classes('w-full justify-end items-center gap-3 mt-4')
+
+        dialog_progresso.open()
+        await asyncio.sleep(0.08)
+
+        total_jogos = len(jogos_alvo)
+        total_etapas = total_jogos + 1
+        
+        if modo == 'completo' and total_jogos > 0:
+            push_log(f'[*] Atualizando saves de {total_jogos} jogos...')
+            for idx, j in enumerate(jogos_alvo, 1):
+                nome = j['nome']
+                subtitulo_progresso.text = f'Compactando ({idx}/{total_jogos}): {nome}'
+                texto_contador.text = f'{idx} de {total_jogos} jogos'
+                barra_progresso.value = (idx - 0.5) / total_etapas
+                texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
+                push_log(f'[{idx}/{total_jogos}] Salvando saves de: {nome}...')
+                await asyncio.sleep(0.01)
+
+                caminho_zip, msg = await run.io_bound(utilidades.fazer_backup_save, j['id'], j['pasta_appdata'])
+                if caminho_zip:
+                    banco_dados.atualizar_jogo(j['id'], {'caminho_save': caminho_zip})
+                    push_log(f'[+] {nome}: save salvo com sucesso.')
+                else:
+                    push_log(f'[!] {nome}: {msg}')
+
+                barra_progresso.value = idx / total_etapas
+                texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
+                await asyncio.sleep(0.01)
+
+        subtitulo_progresso.text = 'Gerando arquivo compactado do Backup Geral (.zip)...'
+        push_log('[*] Compactando banco de dados SQLite e dados do Stasis...')
+        await asyncio.sleep(0.01)
+
+        sucesso, msg = await run.io_bound(utilidades.gravar_arquivo_backup_geral, destino_zip)
+
+        barra_progresso.value = 1.0
+        texto_porcentagem.text = '100%'
+        barra_progresso.props('color=positive')
+        container_icone.clear()
+        with container_icone:
+            ui.icon('check_circle', color='positive', size='md')
+
+        if sucesso:
+            titulo_progresso.text = 'Backup Geral Concluído!'
+            subtitulo_progresso.text = f'Arquivo salvo: {os.path.basename(destino_zip)}'
+            push_log(f'[OK] Arquivo gerado: {os.path.basename(destino_zip)}')
+            push_log('[OK] Todos os saves e cadastros foram preservados.')
+            carregar_grid_jogos.refresh()
+            ui.notify('Backup Geral criado com sucesso!', color='positive', icon='check_circle')
+        else:
+            titulo_progresso.text = 'Falha no Backup Geral'
+            subtitulo_progresso.text = msg
+            push_log(f'[ERRO] {msg}')
+            ui.notify(msg, color='negative')
+
+        with container_botoes:
+            ui.button('Abrir Pasta no Explorer', icon='folder_open', on_click=lambda: utilidades.abrir_pasta_no_explorador(destino_zip)).props('outline color=secondary')
+            ui.button('Concluir', on_click=dialog_progresso.close, color='positive' if sucesso else 'gray')
+
     async def acao_backup_geral():
         jogos = banco_dados.listar_jogos()
-        pendentes = []
-        for j in jogos:
-            pasta = j.get('pasta_appdata')
-            zip_save = j.get('caminho_save')
-            tem_zip = zip_save and os.path.exists(zip_save)
-            if pasta and os.path.exists(pasta) and not tem_zip:
-                pendentes.append(j)
-                
-        if not pendentes:
-            sucesso, msg = await utilidades.exportar_backup_geral()
-            if sucesso:
-                ui.notify(msg, color='positive', icon='check_circle')
-            else:
-                ui.notify(msg, color='warning')
+        if not jogos:
+            ui.notify('Nenhum jogo cadastrado no Stasis para realizar backup.', color='warning')
             return
 
-        with ui.dialog() as dialog_pendentes, ui.card().classes('w-full max-w-lg p-5'):
-            ui.label('Saves Pendentes de Backup').classes('text-xl font-bold text-amber-400')
-            ui.label('Estes jogos possuem pasta de saves mas ainda nao estao no Stasis. Deseja zipar antes do backup geral?').classes('text-sm text-gray-300 mt-1')
+        jogos_com_saves = [
+            j for j in jogos 
+            if j.get('pasta_appdata') and os.path.exists(j.get('pasta_appdata'))
+        ]
+
+        with ui.dialog() as dialog_opcoes, ui.card().classes('w-full max-w-lg p-6 bg-gray-900 border border-blue-600/40 shadow-2xl'):
+            with ui.row().classes('items-center gap-3 mb-2'):
+                ui.icon('archive', size='2.2rem', color='primary')
+                with ui.column().classes('gap-0'):
+                    ui.label('Backup Geral do Stasis').classes('text-xl font-bold text-white')
+                    ui.label(f'{len(jogos)} jogos no catálogo • {len(jogos_com_saves)} prontos para atualizar saves').classes('text-xs text-gray-400')
+                    
+            ui.markdown(
+                'O **Backup Geral** empacota todo o banco de dados, capas e saves em um único arquivo `.zip`.\n\n'
+                '• **Backup Completo (Recomendado):** Varre cada um dos seus jogos instalados e atualiza todos os saves para o estado atual antes de gerar o arquivo.\n'
+                '• **Exportar Rápido:** Gera o backup imediatamente utilizando os arquivos já guardados no Stasis (sem re-compactar os jogos instalados).'
+            ).classes('text-xs text-gray-300 bg-gray-800/80 p-3 rounded-lg border border-gray-700 my-3')
             
-            checks = {}
-            with ui.column().classes('w-full mt-3 gap-2 max-h-60 overflow-y-auto'):
-                for pj in pendentes:
-                    with ui.row().classes('w-full items-center justify-between p-2 bg-gray-800 rounded'):
-                        checks[pj['id']] = ui.checkbox(pj['nome'], value=True).classes('text-white')
-                        ui.label(os.path.basename(pj['pasta_appdata'])).classes('text-xs text-gray-400 font-mono')
-                        
-            async def processar_e_exportar():
-                dialog_pendentes.close()
-                total_zipados = 0
-                for pj in pendentes:
-                    if checks.get(pj['id']) and checks[pj['id']].value:
-                        caminho_zip, _ = utilidades.fazer_backup_save(pj['id'], pj['pasta_appdata'])
-                        if caminho_zip:
-                            banco_dados.atualizar_jogo(pj['id'], {'caminho_save': caminho_zip})
-                            total_zipados += 1
-                if total_zipados > 0:
-                    ui.notify(f'{total_zipados} save(s) compactado(s) com sucesso!', color='positive')
-                    carregar_grid_jogos.refresh()
-                sucesso, msg = await utilidades.exportar_backup_geral()
-                if sucesso:
-                    ui.notify(msg, color='positive', icon='check_circle')
-                else:
-                    ui.notify(msg, color='warning')
-                    
-            async def exportar_direto():
-                dialog_pendentes.close()
-                sucesso, msg = await utilidades.exportar_backup_geral()
-                if sucesso:
-                    ui.notify(msg, color='positive', icon='check_circle')
-                else:
-                    ui.notify(msg, color='warning')
-                    
-            with ui.row().classes('w-full justify-between items-center mt-5'):
-                ui.button('Ignorar e Exportar', on_click=exportar_direto, color='gray').props('flat size=sm')
+            async def iniciar_processamento(modo='completo'):
+                dialog_opcoes.close()
+                destino_zip = await utilidades.solicitar_caminho_salvar_backup_geral()
+                if not destino_zip:
+                    ui.notify('Operação de backup cancelada.', color='info')
+                    return
+                await exibir_modal_progresso(destino_zip, modo=modo, jogos_alvo=jogos_com_saves if modo == 'completo' else [])
+
+            with ui.row().classes('w-full justify-between items-center mt-3'):
+                ui.button('Cancelar', on_click=dialog_opcoes.close, color='gray').props('flat')
                 with ui.row().classes('gap-2'):
-                    ui.button('Cancelar', on_click=dialog_pendentes.close, color='gray').props('flat')
-                    ui.button('Compactar & Exportar', on_click=processar_e_exportar, color='primary')
-                    
-        dialog_pendentes.open()
+                    ui.button('Exportar Rápido', icon='bolt', color='secondary', on_click=lambda: iniciar_processamento('rapido')).props('outline').tooltip('Exporta usando apenas os zips existentes')
+                    ui.button('Backup Completo', icon='cloud_sync', color='primary', on_click=lambda: iniciar_processamento('completo')).classes('font-bold').tooltip('Atualiza saves de todos os jogos instalados e exporta')
+
+        dialog_opcoes.open()
 
     async def acao_restaurar_geral():
         sucesso, msg = await utilidades.importar_backup_geral()
