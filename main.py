@@ -91,7 +91,7 @@ if primeira_execucao:
 
 log_splash("Carregando interface e módulos do sistema...")
 
-from nicegui import ui, app
+from nicegui import ui, app, run
 import banco_dados
 import interface_modais
 import utilidades
@@ -203,7 +203,7 @@ with ui.left_drawer(elevated=True).props('show-if-above width=260').style('backg
                     titulo_progresso = ui.label('Executando Backup Geral...').classes('text-xl font-bold text-white')
                     subtitulo_progresso = ui.label('Inicializando processo...').classes('text-xs text-blue-400')
                     
-            barra_progresso = ui.linear_progress(value=0.0).props('rounded stripe animate size=10px color=primary').classes('w-full mt-3')
+            barra_progresso = ui.linear_progress(value=0.0, show_value=False).props('rounded stripe animate size=10px color=primary').classes('w-full mt-3')
             
             with ui.row().classes('w-full justify-between items-center text-xs mt-1 text-gray-400 font-mono'):
                 texto_porcentagem = ui.label('0%').classes('font-bold text-cyan-400')
@@ -231,60 +231,73 @@ with ui.left_drawer(elevated=True).props('show-if-above width=260').style('backg
         dialog_progresso.open()
         await asyncio.sleep(0.08)
 
-        total_jogos = len(jogos_alvo)
-        total_etapas = total_jogos + 1
-        
-        if modo == 'completo' and total_jogos > 0:
-            push_log(f'[*] Atualizando saves de {total_jogos} jogos...')
-            for idx, j in enumerate(jogos_alvo, 1):
-                nome = j['nome']
-                subtitulo_progresso.text = f'Compactando ({idx}/{total_jogos}): {nome}'
-                texto_contador.text = f'{idx} de {total_jogos} jogos'
-                barra_progresso.value = (idx - 0.5) / total_etapas
-                texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
-                push_log(f'[{idx}/{total_jogos}] Salvando saves de: {nome}...')
-                await asyncio.sleep(0.01)
+        try:
+            total_jogos = len(jogos_alvo)
+            total_etapas = total_jogos + 1
+            
+            if modo == 'completo' and total_jogos > 0:
+                push_log(f'[*] Atualizando saves de {total_jogos} jogos...')
+                for idx, j in enumerate(jogos_alvo, 1):
+                    nome = j['nome']
+                    subtitulo_progresso.text = f'Compactando ({idx}/{total_jogos}): {nome}'
+                    texto_contador.text = f'{idx} de {total_jogos} jogos'
+                    barra_progresso.value = (idx - 0.5) / total_etapas
+                    texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
+                    push_log(f'[{idx}/{total_jogos}] Salvando saves de: {nome}...')
+                    await asyncio.sleep(0.01)
 
-                caminho_zip, msg = await run.io_bound(utilidades.fazer_backup_save, j['id'], j['pasta_appdata'])
-                if caminho_zip:
-                    banco_dados.atualizar_jogo(j['id'], {'caminho_save': caminho_zip})
-                    push_log(f'[+] {nome}: save salvo com sucesso.')
-                else:
-                    push_log(f'[!] {nome}: {msg}')
+                    caminho_zip, msg = await run.io_bound(utilidades.fazer_backup_save, j['id'], j['pasta_appdata'])
+                    if caminho_zip:
+                        banco_dados.atualizar_jogo(j['id'], {'caminho_save': caminho_zip})
+                        push_log(f'[+] {nome}: save salvo com sucesso.')
+                    else:
+                        push_log(f'[!] {nome}: {msg}')
 
-                barra_progresso.value = idx / total_etapas
-                texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
-                await asyncio.sleep(0.01)
+                    barra_progresso.value = idx / total_etapas
+                    texto_porcentagem.text = f'{int(barra_progresso.value * 100)}%'
+                    await asyncio.sleep(0.01)
 
-        subtitulo_progresso.text = 'Gerando arquivo compactado do Backup Geral (.zip)...'
-        push_log('[*] Compactando banco de dados SQLite e dados do Stasis...')
-        await asyncio.sleep(0.01)
+            subtitulo_progresso.text = 'Gerando arquivo compactado do Backup Geral (.zip)...'
+            push_log('[*] Compactando banco de dados SQLite e dados do Stasis...')
+            await asyncio.sleep(0.01)
 
-        sucesso, msg = await run.io_bound(utilidades.gravar_arquivo_backup_geral, destino_zip)
+            sucesso, msg = await run.io_bound(utilidades.gravar_arquivo_backup_geral, destino_zip)
 
-        barra_progresso.value = 1.0
-        texto_porcentagem.text = '100%'
-        barra_progresso.props('color=positive')
-        container_icone.clear()
-        with container_icone:
-            ui.icon('check_circle', color='positive', size='md')
+            barra_progresso.value = 1.0
+            texto_porcentagem.text = '100%'
+            barra_progresso.props('color=positive')
+            container_icone.clear()
+            with container_icone:
+                ui.icon('check_circle', color='positive', size='md')
 
-        if sucesso:
-            titulo_progresso.text = 'Backup Geral Concluído!'
-            subtitulo_progresso.text = f'Arquivo salvo: {os.path.basename(destino_zip)}'
-            push_log(f'[OK] Arquivo gerado: {os.path.basename(destino_zip)}')
-            push_log('[OK] Todos os saves e cadastros foram preservados.')
-            carregar_grid_jogos.refresh()
-            ui.notify('Backup Geral criado com sucesso!', color='positive', icon='check_circle')
-        else:
-            titulo_progresso.text = 'Falha no Backup Geral'
-            subtitulo_progresso.text = msg
-            push_log(f'[ERRO] {msg}')
-            ui.notify(msg, color='negative')
+            if sucesso:
+                titulo_progresso.text = 'Backup Geral Concluído!'
+                subtitulo_progresso.text = f'Arquivo salvo: {os.path.basename(destino_zip)}'
+                push_log(f'[OK] Arquivo gerado: {os.path.basename(destino_zip)}')
+                push_log('[OK] Todos os saves e cadastros foram preservados.')
+                carregar_grid_jogos.refresh()
+                ui.notify('Backup Geral criado com sucesso!', color='positive', icon='check_circle')
+            else:
+                titulo_progresso.text = 'Falha no Backup Geral'
+                subtitulo_progresso.text = msg
+                push_log(f'[ERRO] {msg}')
+                ui.notify(msg, color='negative')
 
-        with container_botoes:
-            ui.button('Abrir Pasta no Explorer', icon='folder_open', on_click=lambda: utilidades.abrir_pasta_no_explorador(destino_zip)).props('outline color=secondary')
-            ui.button('Concluir', on_click=dialog_progresso.close, color='positive' if sucesso else 'gray')
+            with container_botoes:
+                ui.button('Abrir Pasta no Explorer', icon='folder_open', on_click=lambda: utilidades.abrir_pasta_no_explorador(destino_zip)).props('outline color=secondary')
+                ui.button('Concluir', on_click=dialog_progresso.close, color='positive' if sucesso else 'gray')
+
+        except Exception as e:
+            logger.error(f'Erro durante execução do Backup Geral: {e}', exc_info=True)
+            container_icone.clear()
+            with container_icone:
+                ui.icon('error', color='negative', size='md')
+            titulo_progresso.text = 'Erro no Backup Geral'
+            subtitulo_progresso.text = f'Falha: {e}'
+            push_log(f'[ERRO INESPERADO] {e}')
+            ui.notify(f'Erro durante o backup: {e}', color='negative')
+            with container_botoes:
+                ui.button('Fechar', on_click=dialog_progresso.close, color='gray')
 
     async def acao_backup_geral():
         jogos = banco_dados.listar_jogos()
@@ -349,7 +362,7 @@ with ui.left_drawer(elevated=True).props('show-if-above width=260').style('backg
     
     ui.label('Informações').classes('text-sm font-bold mb-2 mt-2 ml-4 text-gray-500 uppercase')
     ui.label('Gerenciador e Launcher de Jogos em Stasis.').classes('text-xs text-gray-400 ml-4 mr-4')
-    ui.label('Versão 1.4.0').classes('text-xs text-gray-500 ml-4 mt-2 font-mono')
+    ui.label('Versão 1.4.1').classes('text-xs text-gray-500 ml-4 mt-2 font-mono')
 
 with ui.column().classes('w-full max-w-[1400px] mx-auto p-6'):
     with ui.row().classes('w-full justify-between items-center mb-2'):
